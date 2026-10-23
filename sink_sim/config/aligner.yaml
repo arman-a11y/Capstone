@@ -1,0 +1,36 @@
+# sink_aligner parameters. Distances in metres, angles in radians.
+/**:
+  ros__parameters:
+    autostart: true
+    rate: 20.0
+
+    # frames (Clearpath does not prefix frame names; tf topics are namespaced
+    # and the launch file remaps them)
+    odom_frame: odom
+    base_frame: base_link
+    tag_left_frame: sink_tag_left    # tag id 0, robot's left when facing the sink
+    tag_right_frame: sink_tag_right  # tag id 1
+    max_tag_age: 0.5                 # ignore detections older than this [s]
+
+    # where to stop
+    standoff: 0.62          # base_link origin to cabinet face (bumper ends ~12 cm short)
+    lateral_offset: 0.0     # + moves the robot to its left when facing the sink
+    predock_distance: 0.50
+    expected_separation: 0.75   # centre to centre distance between the two tags
+    separation_tol: 0.05
+
+    # tolerances (2 cm total budget at the P-trap)
+    tol_x: 0.004
+    tol_y: 0.010
+    tol_yaw: 0.015
+
+    # speeds
+    max_lin: 0.25
+    max_ang: 0.6
+
+    # extra frame for the arm: P-trap position in the sink_face frame
+    # (x out of the cabinet toward the robot, y robot's right, z up from tag height)
+    p_trap_offset: [-0.27, 0.0, 0.0]
+
+    # 'auto' checks what the base is listening for; or force 'true' / 'false'
+    cmd_vel_stamped: auto

@@ -1,0 +1,36 @@
+{
+  "name": "Sink sim (ROS 2 Jazzy + Gazebo Harmonic)",
+  "image": "osrf/ros:jazzy-desktop",
+
+  // 4 cores / 16 GB is the smallest machine that runs Gazebo + the robot comfortably.
+  "hostRequirements": { "cpus": 4, "memory": "16gb" },
+
+  // A small Linux desktop you open in a browser tab, so you can see Gazebo and RViz.
+  "features": {
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "password": "vscode",
+      "webPort": "6080",
+      "vncPort": "5901"
+    }
+  },
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": { "label": "Desktop (Gazebo, RViz)", "onAutoForward": "notify" }
+  },
+
+  "containerEnv": {
+    "DISPLAY": ":1",
+    // no GPU in Codespaces, so render in software
+    "LIBGL_ALWAYS_SOFTWARE": "1",
+    "QT_X11_NO_MITSHM": "1"
+  },
+
+  "remoteUser": "root",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+}

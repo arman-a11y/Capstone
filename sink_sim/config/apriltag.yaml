@@ -1,0 +1,20 @@
+# apriltag_ros (christianrauch/apriltag_ros, apt: ros-jazzy-apriltag-ros)
+# 'size' is the edge of the BLACK square only, not the white border.
+/**:
+  ros__parameters:
+    image_transport: raw
+    family: 36h11
+    size: 0.10
+    max_hamming: 0
+    detector:
+      threads: 2
+      decimate: 1.0      # full resolution: tags are small at 1.5 to 2 m
+      blur: 0.0
+      refine: true
+      sharpening: 0.25
+      debug: false
+    pose_estimation_method: "pnp"
+    tag:
+      ids: [0, 1]
+      frames: [sink_tag_left, sink_tag_right]
+      sizes: [0.10, 0.10]
