@@ -10,7 +10,7 @@
     base_frame: base_link
     tag_left_frame: sink_tag_left    # tag id 0, robot's left when facing the sink
     tag_right_frame: sink_tag_right  # tag id 1
-    max_tag_age: 0.5                 # ignore detections older than this [s]
+    max_tag_age: 3.0                 # ignore detections older than this [s]
 
     # where to stop
     standoff: 0.62          # base_link origin to cabinet face (bumper ends ~12 cm short)
