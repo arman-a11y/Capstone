@@ -64,8 +64,8 @@ class Params:
     freeze_distance: float = 0.35   # stop updating the face estimate when this close
     min_measurements: int = 5       # face measurements before we start driving
     settle_time: float = 1.0        # wait at the pre-dock point to refresh the estimate [s]
-    search_ang: float = 0.3
-    search_timeout: float = 25.0
+    search_ang: float = 0.1
+    search_timeout: float = 180.0
 
 
 def face_from_tags(p_left, p_right, robot_xy):
