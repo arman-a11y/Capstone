@@ -16,6 +16,13 @@ stretch.
 
 Goal (in F): robot base_link at x = standoff, y = -lateral_offset, heading
 facing the cabinet (pi in F).
+
+Two drive modes:
+  * holonomic=True  (Ridgeback, mecanum wheels): moves forward, sideways and
+    turns at the same time, so lateral error is simply driven out.
+  * holonomic=False (diff drive like a Husky): turn-then-drive with a pre-dock
+    point and back-off retries, since it can't move sideways.
+step() always returns (vx, vy, w); vy is 0 in diff mode.
 """
 
 import math
@@ -39,12 +46,13 @@ class Face:
 
 @dataclass
 class Params:
-    standoff: float = 0.62          # base_link origin to cabinet face [m]
+    holonomic: bool = True          # True for mecanum / omni bases (Ridgeback)
+    standoff: float = 0.60          # base_link origin to cabinet face [m]
     lateral_offset: float = 0.0     # + shifts robot to ITS left when facing sink
     predock_distance: float = 0.50  # pre-dock point this far behind the goal [m]
-    predock_tol: float = 0.015      # how close to the pre-dock point counts [m]
+    predock_tol: float = 0.008      # how close to the pre-dock point counts [m]
     tol_x: float = 0.004            # final along-normal tolerance [m]
-    tol_y: float = 0.010            # final lateral tolerance [m]
+    tol_y: float = 0.005            # final lateral tolerance [m]
     tol_yaw: float = 0.015          # final yaw tolerance [rad] (~0.9 deg)
     max_lin: float = 0.25
     max_ang: float = 0.6
@@ -64,7 +72,7 @@ class Params:
     freeze_distance: float = 0.35   # stop updating the face estimate when this close
     min_measurements: int = 5       # face measurements before we start driving
     settle_time: float = 1.0        # wait at the pre-dock point to refresh the estimate [s]
-    search_ang: float = 0.1
+    search_ang: float = 0.25
     search_timeout: float = 180.0
 
 
@@ -97,6 +105,14 @@ def face_to_odom(face, fx, fy):
 class Aligner:
     """State machine. Call add_tags() when both tags are seen, step() at a fixed rate.
 
+    Holonomic mode:
+    SEARCH   spin in place until both tags give a valid face estimate
+    PREDOCK  move to a point predock_distance straight out from the goal while
+             turning to face the cabinet (keeps the tags in view)
+    SETTLE   stop there briefly so the face estimate refreshes from close range
+    FINAL    move in to the goal, correcting along, sideways and yaw together
+
+    Diff-drive mode:
     SEARCH   spin in place until both tags give a valid face estimate
     PREDOCK  drive (turn, go) to a point predock_distance straight out from the goal
     SETTLE   stop there briefly so the face estimate refreshes from close range
@@ -167,15 +183,42 @@ class Aligner:
     def _fail(self, why):
         self.state = self.FAILED
         self.reason = why
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
+
+    def _axis(self, err, tol):
+        """P control on one axis with a creep speed, 0 inside the tolerance."""
+        if abs(err) < tol:
+            return 0.0
+        return math.copysign(clip(self.p.k_lin * abs(err), self.p.min_lin, self.p.max_lin), err)
+
+    def _goto_holonomic(self, robot_pose, fx_t, fy_t, tol_x, tol_y, tol_yaw):
+        """Command toward (fx_t, fy_t) in F, facing the cabinet. Returns (vx, vy, w, arrived)."""
+        p = self.p
+        fx, fy, fth = robot_in_face(self.face, *robot_pose)
+        dth = wrap(math.pi - fth)
+        vfx = self._axis(fx_t - fx, tol_x)
+        vfy = self._axis(fy_t - fy, tol_y)
+        n = math.hypot(vfx, vfy)
+        if n > p.max_lin:
+            vfx, vfy = vfx * p.max_lin / n, vfy * p.max_lin / n
+        # big heading error: turn first, so the camera keeps the tags in view
+        scale = max(0.0, math.cos(dth)) ** 2
+        vfx, vfy = vfx * scale, vfy * scale
+        # face frame velocity -> robot frame
+        c, s_ = math.cos(fth), math.sin(fth)
+        vx = c * vfx + s_ * vfy
+        vy = -s_ * vfx + c * vfy
+        w = 0.0 if abs(dth) < tol_yaw else self._turn(dth)
+        arrived = vfx == 0.0 and vfy == 0.0 and w == 0.0
+        return vx, vy, w, arrived
 
     # -- control ---------------------------------------------------------------
     def step(self, robot_pose, t):
-        """Return (v, w). robot_pose = (x, y, yaw) in odom, t in seconds."""
+        """Return (vx, vy, w). robot_pose = (x, y, yaw) in odom, t in seconds."""
         p = self.p
         S = self
         if self.state in (S.DONE, S.FAILED):
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0
 
         if self.state == S.SEARCH:
             if self.face is not None and self.n_meas >= p.min_measurements:
@@ -185,10 +228,49 @@ class Aligner:
                     self.t_search = t
                 if t - self.t_search > p.search_timeout:
                     return self._fail('tags not found')
-                return 0.0, (p.search_ang if self.face is None else 0.0)
+                return 0.0, 0.0, (p.search_ang if self.face is None else 0.0)
 
-        ex, ey, eyaw = self.errors(robot_pose)
-        self.last_error = (ex, ey, eyaw)
+        self.last_error = self.errors(robot_pose)
+        if p.holonomic:
+            return self._step_holonomic(robot_pose, t)
+        v, w = self._step_diff(robot_pose, t)
+        return v, 0.0, w
+
+    def _step_holonomic(self, robot_pose, t):
+        p = self.p
+        S = self
+        gx, gy = self.goal_in_face()
+
+        if self.state == S.PREDOCK:
+            vx, vy, w, arrived = self._goto_holonomic(
+                robot_pose, gx + p.predock_distance, gy,
+                p.predock_tol, p.predock_tol, 2 * p.tol_yaw)
+            if arrived:
+                self.state = S.SETTLE
+                self.t_settle = t
+                return 0.0, 0.0, 0.0
+            return vx, vy, w
+
+        if self.state == S.SETTLE:
+            if t - self.t_settle >= p.settle_time:
+                self.state = S.FINAL
+            return 0.0, 0.0, 0.0
+
+        if self.state == S.FINAL:
+            vx, vy, w, arrived = self._goto_holonomic(
+                robot_pose, gx, gy, p.tol_x, p.tol_y, p.tol_yaw)
+            if arrived:
+                self.state = S.DONE
+                return 0.0, 0.0, 0.0
+            return vx, vy, w
+
+        return 0.0, 0.0, 0.0
+
+    def _step_diff(self, robot_pose, t):
+        """Turn-then-drive for bases that can't move sideways. Returns (v, w)."""
+        p = self.p
+        S = self
+        ex, ey, eyaw = self.last_error
         rx, ry, ryaw = robot_pose
 
         if self.state == S.PREDOCK:
@@ -263,6 +345,7 @@ class Aligner:
     def _start_backoff(self):
         self.retries += 1
         if self.retries > self.p.max_retries:
-            return self._fail('lateral error after max retries')
+            self._fail('lateral error after max retries')
+            return 0.0, 0.0
         self.state = self.BACKOFF
         return 0.0, 0.0

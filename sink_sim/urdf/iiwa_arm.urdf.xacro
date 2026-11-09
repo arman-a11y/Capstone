@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!--
+  KUKA LBR iiwa 7 R800 on the Ridgeback deck.
+
+  Clearpath includes this file through platform.extras.urdf in robot.yaml, so it
+  ends up inside the generated robot.urdf.xacro. The arm model itself comes from
+  lbr_iiwa7_r800_description (lbr-stack), which setup.sh clones into the workspace.
+
+  Names: links arm_0_link_0 ... arm_0_link_7, arm_0_link_ee
+         joints arm_0_A1 ... arm_0_A7
+
+  In simulation (is_sim true) the joints get a gz_ros2_control block so the
+  arm_controller in config/arm_controllers.yaml can move them. On the real robot
+  the arm is driven by the lbr-stack FRI driver instead, so no ros2_control
+  block is added there.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- where the arm base sits, relative to default_mount (centre of the deck surface).
+       x forward, y left, z up, metres and radians. Change to match your real mount. -->
+  <xacro:property name="arm_mount_xyz" value="0.20 0.0 0.0" />
+  <xacro:property name="arm_mount_rpy" value="0.0 0.0 0.0" />
+  <xacro:property name="arm_name" value="arm_0" />
+
+  <xacro:include filename="$(find lbr_iiwa7_r800_description)/urdf/lbr_iiwa7_r800_macro.xacro" />
+  <xacro:lbr_iiwa7_r800 robot_name="${arm_name}" />
+
+  <joint name="${arm_name}_mount_joint" type="fixed">
+    <parent link="default_mount" />
+    <child link="${arm_name}_link_0" />
+    <origin xyz="${arm_mount_xyz}" rpy="${arm_mount_rpy}" />
+  </joint>
+
+  <xacro:macro name="iiwa_sim_joint" params="j">
+    <joint name="${arm_name}_${j}">
+      <command_interface name="position" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity" />
+    </joint>
+  </xacro:macro>
+
+  <xacro:if value="$(arg is_sim)">
+    <ros2_control name="${arm_name}_hardware" type="system">
+      <hardware>
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </hardware>
+      <xacro:iiwa_sim_joint j="A1" />
+      <xacro:iiwa_sim_joint j="A2" />
+      <xacro:iiwa_sim_joint j="A3" />
+      <xacro:iiwa_sim_joint j="A4" />
+      <xacro:iiwa_sim_joint j="A5" />
+      <xacro:iiwa_sim_joint j="A6" />
+      <xacro:iiwa_sim_joint j="A7" />
+    </ros2_control>
+  </xacro:if>
+
+</robot>

@@ -9,12 +9,14 @@ if [ "$(id -u)" -ne 0 ]; then SUDO="sudo"; fi
 
 PKGS="ros-jazzy-clearpath-simulator ros-jazzy-clearpath-nav2-demos \
 ros-jazzy-clearpath-desktop ros-jazzy-clearpath-config-live \
-ros-jazzy-apriltag-ros ros-jazzy-ur-description \
+ros-jazzy-apriltag-ros ros-jazzy-ros2controlcli liburdfdom-tools \
+ros-jazzy-gz-ros2-control ros-jazzy-joint-trajectory-controller \
+ros-jazzy-mecanum-drive-controller ros-jazzy-rqt-image-view \
 python3-colcon-common-extensions python3-pytest"
 
 echo "==> Installing packages"
 $SUDO apt-get update
-$SUDO apt-get install -y wget gnupg lsb-release
+$SUDO apt-get install -y wget gnupg lsb-release git
 
 if ! $SUDO apt-get install -y $PKGS; then
   echo "==> Adding Clearpath's package server and retrying"
@@ -26,19 +28,28 @@ if ! $SUDO apt-get install -y $PKGS; then
   $SUDO apt-get install -y $PKGS
 fi
 
-echo "==> Building the workspace"
+echo "==> Getting the KUKA iiwa 7 R800 model (lbr-stack, not on apt)"
 mkdir -p "$HOME/sink_ws/src"
+IIWA_DIR="$HOME/sink_ws/src/lbr_iiwa7_r800_description"
+if [ ! -d "$IIWA_DIR" ]; then
+  git clone --depth 1 -b v2.5.0 https://github.com/lbr-stack/lbr_iiwa7_r800_description.git "$IIWA_DIR"
+fi
+
+echo "==> Building the workspace"
 ln -sfn "$REPO_DIR/sink_sim" "$HOME/sink_ws/src/sink_sim"
 set +u
 source /opt/ros/jazzy/setup.bash
 set -u
 (cd "$HOME/sink_ws" && colcon build --symlink-install)
 
-echo "==> Robot config (front camera only, lighter without a GPU)"
+echo "==> Robot config: Ridgeback + iiwa, front camera only (lighter without a GPU)"
 mkdir -p "$HOME/clearpath"
-if [ ! -f "$HOME/clearpath/robot.yaml" ]; then
-  cp "$REPO_DIR/sink_sim/clearpath/robot_front_camera_only.yaml" "$HOME/clearpath/robot.yaml"
+if [ -f "$HOME/clearpath/robot.yaml" ] && \
+   ! cmp -s "$HOME/clearpath/robot.yaml" "$REPO_DIR/sink_sim/clearpath/robot_front_camera_only.yaml"; then
+  cp "$HOME/clearpath/robot.yaml" "$HOME/clearpath/robot.yaml.bak"
+  echo "    (saved your old one as ~/clearpath/robot.yaml.bak)"
 fi
+cp "$REPO_DIR/sink_sim/clearpath/robot_front_camera_only.yaml" "$HOME/clearpath/robot.yaml"
 
 if ! grep -q "sink_ws/install/setup.bash" "$HOME/.bashrc"; then
   {

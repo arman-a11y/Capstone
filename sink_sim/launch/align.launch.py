@@ -14,6 +14,17 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def clearpath_has_optical_frames():
+    """True if the installed Clearpath RealSense model adds optical frames in sim."""
+    try:
+        path = os.path.join(get_package_share_directory('clearpath_sensors_description'),
+                            'urdf', 'intel_realsense.urdf.xacro')
+        with open(path) as f:
+            return 'use_nominal_extrinsics' in f.read()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def generate_launch_description():
     pkg = get_package_share_directory('sink_sim')
     ns = LaunchConfiguration('namespace')
@@ -30,10 +41,12 @@ def generate_launch_description():
         parameters=[os.path.join(pkg, 'config', 'apriltag.yaml'), sim],
         remappings=tf_remaps + [('image_rect', image), ('camera_info', info)])
 
-    # Clearpath's RealSense model doesn't define the optical frames (the real
-    # camera driver publishes them). In sim the image is stamped with
-    # <camera>_color_optical_frame, so link it to <camera>_link here.
-    # Only needed in simulation: launch with sim_optical_frame:=false on the robot.
+    # Older Clearpath releases (before 2.9.19) left the RealSense optical frames
+    # out of the simulated robot, so the tag poses couldn't be linked to the robot.
+    # On those, link <camera>_color_optical_frame to <camera>_link here. Newer
+    # releases include the frames, and publishing them twice would break TF, so
+    # this only runs when the installed Clearpath version needs it.
+    # On the real robot the camera driver publishes them: use sim_optical_frame:=false.
     optical_tf = Node(
         package='tf2_ros', executable='static_transform_publisher',
         name='camera_optical_tf', namespace=ns, output='screen',
@@ -53,11 +66,12 @@ def generate_launch_description():
         remappings=tf_remaps)
 
     return LaunchDescription([
-        DeclareLaunchArgument('namespace', default_value='a200_0000'),
+        DeclareLaunchArgument('namespace', default_value='r100_0000'),
         DeclareLaunchArgument('camera', default_value='camera_0'),
         DeclareLaunchArgument('use_sim_time', default_value='true'),
         DeclareLaunchArgument('autostart', default_value='true'),
-        DeclareLaunchArgument('sim_optical_frame', default_value='true'),
+        DeclareLaunchArgument('sim_optical_frame',
+                              default_value='false' if clearpath_has_optical_frames() else 'true'),
         optical_tf,
         apriltag,
         aligner,

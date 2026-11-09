@@ -1,6 +1,7 @@
 # Sink drain robot sim
 
-Husky A200 + UR5 that drives up to a hospital sink and aligns to two AprilTags.
+Clearpath Ridgeback + KUKA LBR iiwa 7 R800 that drives up to a hospital sink and aligns to
+two AprilTags.
 The ROS 2 package is in `sink_sim/` (its README has all the details).
 
 ## Run it in GitHub Codespaces
@@ -18,8 +19,11 @@ The ROS 2 package is in `sink_sim/` (its README has all the details).
 # terminal 1: the sim (window appears in the desktop tab)
 ros2 launch sink_sim sim.launch.py
 
-# terminal 2: arm up, once the robot has spawned
-ros2 run sink_sim arm_pose --ros-args -r __ns:=/a200_0000 -p use_sim_time:=true -p pose:=up
+# check the 3 controllers are active (wheels, joint states, arm)
+ros2 control list_controllers --ros-args -r __ns:=/r100_0000
+
+# terminal 2: arm up, once arm_controller is active
+ros2 run sink_sim arm_pose --ros-args -r __ns:=/r100_0000 -p use_sim_time:=true -p pose:=up
 
 # terminal 3: tag detection + alignment
 ros2 launch sink_sim align.launch.py
@@ -49,3 +53,14 @@ source ~/.bashrc
 ```
 
 Then the same three terminals as above.
+
+## Updating an existing Codespace
+
+If your Codespace was set up for the old Husky + UR5 version, after pulling the new files run
+this once from the repo root. It installs the new packages, clones the iiwa model, rebuilds
+and swaps `~/clearpath/robot.yaml` for the Ridgeback one (the old one is kept as `.bak`):
+
+```bash
+bash .devcontainer/setup.sh
+source ~/.bashrc
+```

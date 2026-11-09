@@ -1,0 +1,25 @@
+# Trajectory controller for the iiwa 7 in simulation. sim.launch.py loads it into
+# Clearpath's controller manager (/r100_0000/controller_manager) with the spawner.
+/**/arm_controller:
+  ros__parameters:
+    type: joint_trajectory_controller/JointTrajectoryController
+    use_sim_time: true
+    joints:
+      - arm_0_A1
+      - arm_0_A2
+      - arm_0_A3
+      - arm_0_A4
+      - arm_0_A5
+      - arm_0_A6
+      - arm_0_A7
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 20.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 0.0

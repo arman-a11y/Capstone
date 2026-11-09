@@ -12,21 +12,28 @@
     tag_right_frame: sink_tag_right  # tag id 1
     max_tag_age: 3.0                 # ignore detections older than this [s]
 
+    # drive mode: true for the Ridgeback (mecanum, can move sideways),
+    # false for a diff-drive base like a Husky
+    holonomic: true
+
     # where to stop
-    standoff: 0.62          # base_link origin to cabinet face (bumper ends ~12 cm short)
+    standoff: 0.60          # base_link origin to cabinet face (Ridgeback front ends ~12 cm short)
     lateral_offset: 0.0     # + moves the robot to its left when facing the sink
-    predock_distance: 0.50
+    predock_distance: 0.50  # stop this far out first to re-measure the tags
+    predock_tol: 0.008
     expected_separation: 0.75   # centre to centre distance between the two tags
     separation_tol: 0.05
 
     # tolerances (2 cm total budget at the P-trap)
     tol_x: 0.004
-    tol_y: 0.010
+    tol_y: 0.005            # sideways is cheap on mecanum wheels, so ask for more
     tol_yaw: 0.015
 
     # speeds
     max_lin: 0.25
     max_ang: 0.6
+    search_ang: 0.25        # spin speed while looking for the tags [rad/s]
+    search_timeout: 180.0   # sim seconds before giving up
 
     # extra frame for the arm: P-trap position in the sink_face frame
     # (x out of the cabinet toward the robot, y robot's right, z up from tag height)

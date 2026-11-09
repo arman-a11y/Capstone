@@ -1,72 +1,58 @@
-# Husky A200 + UR5 + front RealSense only + 2D lidar (lighter on a laptop), for the sink alignment sim.
+# Clearpath Ridgeback (R100) + KUKA LBR iiwa 7 R800 + front RealSense only + front lidar (lighter on a laptop),
+# for the sink alignment sim.
 # Copy this file to ~/clearpath/robot.yaml (the file name must stay robot.yaml).
-# Preview changes live with:
-#   ros2 launch clearpath_config_live view_model.launch.py setup_path:=$HOME/clearpath
 #
-# Rough heights (from the A200 URDF): base_link is ~0.13 m above the floor,
-# the top plate surface is ~0.38 m above the floor.
+# Rough heights (from the R100 URDF): base_link is ~0.03 m above the floor and
+# default_mount (the deck surface) is ~0.32 m above the floor.
+#
+# Clearpath doesn't include the KUKA iiwa in its arm list, so the arm is added
+# through platform.extras as a custom URDF (sink_sim/urdf/iiwa_arm.urdf.xacro).
+# Where it sits on the deck is set at the top of that file.
 
-serial_number: a200-0000
+serial_number: r100-0000
 version: 0
 
 system:
   hosts:
-    - hostname: cpr-a200-0000
+    - hostname: cpr-r100-0000
       ip: 192.168.131.1
   ros2:
-    namespace: a200_0000
+    namespace: r100_0000
 
 platform:
-  attachments:
-    - name: front_bumper
-      type: a200.bumper
-      parent: front_bumper_mount
-    - name: rear_bumper
-      type: a200.bumper
-      parent: rear_bumper_mount
-    - name: top_plate
-      type: a200.top_plate
-
-manipulators:
-  moveit:
-    enable: true
-  arms:
-    # UR5 (CB series). Mounted a bit forward of the plate centre so it can
-    # reach into the sink cabinet. Change ur_type to ur5e if your arm is an e-Series.
-    - model: universal_robots
-      parent: top_plate_default_mount
-      xyz: [0.10, 0.0, 0.0]
-      rpy: [0.0, 0.0, 0.0]
-      ur_type: ur5
-      robot_ip: 192.168.131.40
-      headless_mode: false
-      poses:
-        - name: up
-          joints: [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]
+  drivetrain:
+    control: omni_4wd          # mecanum wheels: forward, sideways and turning
+    wheels:
+      front: mecanum
+      rear: mecanum
+  extras:
+    urdf:
+      package: sink_sim
+      path: urdf/iiwa_arm.urdf.xacro
 
 sensors:
   camera:
-    # camera_0: front RealSense, sits just above the lidar at the front edge
-    # of the top plate, looking straight ahead at tag height (~0.45 m).
+    # camera_0: front RealSense at the front edge of the deck, looking straight
+    # ahead (lens ~0.33 m above the floor, tags are at 0.45 m).
     - model: intel_realsense
       urdf_enabled: true
       launch_enabled: true
-      parent: top_plate_front_mount
-      xyz: [0.0, 0.0, 0.09]
+      parent: default_mount
+      xyz: [0.42, 0.0, 0.0]
       rpy: [0.0, 0.0, 0.0]
   lidar2d:
-    # lidar2d_0: front 2D lidar for SLAM / Nav2. Field of view is trimmed so
-    # it does not see the arm behind it.
+    # lidar2d_0: the Ridgeback's built-in front Hokuyo (same spot as Clearpath's
+    # sample config), used for SLAM / Nav2.
     - model: hokuyo_ust
       urdf_enabled: true
       launch_enabled: true
-      parent: top_plate_front_mount
-      xyz: [0.0, 0.0, 0.0]
+      parent: chassis_link
+      xyz: [0.3922, 0.0, 0.1856]
       rpy: [0.0, 0.0, 0.0]
       ros_parameters:
         urg_node:
           laser_frame_id: lidar2d_0_laser
           ip_address: 192.168.131.20
           ip_port: 10940
-          angle_min: -2.0
-          angle_max: 2.0
+          angle_min: -2.35619
+          angle_max: 2.35619

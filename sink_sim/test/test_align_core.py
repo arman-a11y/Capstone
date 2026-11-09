@@ -1,11 +1,13 @@
 """Offline check of the alignment logic, no ROS or Gazebo needed.
 
-Simulates a skid-steer base with actuation noise and odometry drift, a front
-camera with a D435-like field of view, and noisy tag detections. Asserts the
-TRUE final pose is inside the 2 cm / ~1 deg budget for many random starts.
+Simulates the base (Ridgeback mecanum by default, or a diff drive) with actuation
+noise and odometry drift, the front camera with the simulated RealSense's field
+of view, and noisy tag detections. Asserts the TRUE final pose is inside the
+2 cm / ~1 deg budget for many random starts.
 
     python3 -m pytest test/test_align_core.py -q
     python3 test/test_align_core.py          # prints a summary table
+    DIFF=1 python3 test/test_align_core.py   # same for a diff-drive base
 """
 
 import math
@@ -21,10 +23,10 @@ FACE_X = 3.45
 TAG_Y = 0.375
 TAG_LEFT = (FACE_X, TAG_Y)
 TAG_RIGHT = (FACE_X, -TAG_Y)
-CAM_X = 0.445                 # camera offset forward of base_link
-HFOV = math.radians(69.0)
+CAM_X = 0.43                  # Ridgeback front camera, forward of base_link
+HFOV = 1.25                   # Clearpath's simulated RealSense [rad]
 MAX_RANGE = 3.0
-MIN_RANGE = 0.12
+MIN_RANGE = 0.30              # simulated camera near clip
 
 
 def visible(pose, tag):
@@ -48,11 +50,13 @@ def run(start, seed, p=None, verbose=False):
     al = Aligner(p)
     truth = list(start)
     odom = list(start)
-    bias_v = 1 + rng.gauss(0, 0.01)
+    # odometry scale errors: mecanum wheels slip more, especially sideways
+    bias_x = 1 + rng.gauss(0, 0.015)
+    bias_y = 1 + rng.gauss(0, 0.04)
     bias_w = 1 + rng.gauss(0, 0.02)
     dt = 0.05
     t = 0.0
-    while t < 120 and al.state not in (al.DONE, al.FAILED):
+    while t < 200 and al.state not in (al.DONE, al.FAILED):
         # detections at 10 Hz
         if int(round(t / dt)) % 2 == 0:
             dl, dr = visible(truth, TAG_LEFT), visible(truth, TAG_RIGHT)
@@ -70,13 +74,18 @@ def run(start, seed, p=None, verbose=False):
                     meas.append((ox + math.cos(oth) * rx - math.sin(oth) * ry,
                                  oy + math.sin(oth) * rx + math.cos(oth) * ry))
                 al.add_tags(meas[0], meas[1], tuple(odom))
-        v, w = al.step(tuple(odom), t)
-        va = v * (1 + rng.gauss(0, 0.03))
-        wa = w * (1 + rng.gauss(0, 0.03))
-        for st, vv, ww in ((truth, va, wa), (odom, va * bias_v, wa * bias_w)):
-            st[0] += vv * math.cos(st[2]) * dt
-            st[1] += vv * math.sin(st[2]) * dt
-            st[2] = wrap(st[2] + ww * dt)
+        vx, vy, w = al.step(tuple(odom), t)
+        if not p.holonomic:
+            assert vy == 0.0
+        # what the wheels actually do (noisy), and what odometry thinks they did
+        ax = vx * (1 + rng.gauss(0, 0.03))
+        ay = vy * (1 + rng.gauss(0, 0.06))
+        aw = w * (1 + rng.gauss(0, 0.03))
+        for st, bx, by, bw in ((truth, 1, 1, 1), (odom, bias_x, bias_y, bias_w)):
+            c, s_ = math.cos(st[2]), math.sin(st[2])
+            st[0] += (ax * bx * c - ay * by * s_) * dt
+            st[1] += (ax * bx * s_ + ay * by * c) * dt
+            st[2] = wrap(st[2] + aw * bw * dt)
         t += dt
     # true error vs the true goal
     goal_x = FACE_X - p.standoff
@@ -97,14 +106,32 @@ def random_starts(n, seed=0):
         yield (rng.uniform(1.4, 2.3), rng.uniform(-0.5, 0.5), rng.uniform(-0.45, 0.45)), i
 
 
-def test_reaches_two_cm_budget():
+def _check_budget(p):
     fails = []
     for start, i in random_starts(N):
-        al, ex, ey, eyaw, _ = run(start, seed=i)
+        al, ex, ey, eyaw, _ = run(start, seed=i, p=p)
         ok = al.state == al.DONE and math.hypot(ex, ey) < 0.02 and abs(eyaw) < math.radians(1.5)
         if not ok:
             fails.append((start, al.state, ex, ey, math.degrees(eyaw)))
     assert not fails, fails
+
+
+def test_holonomic_reaches_two_cm_budget():
+    _check_budget(Params(holonomic=True))
+
+
+def test_holonomic_moves_sideways():
+    # starting well off to the side, it should strafe (vy != 0) rather than only turn
+    al = Aligner(Params(holonomic=True))
+    for _ in range(6):
+        al.add_tags((FACE_X, TAG_Y), (FACE_X, -TAG_Y), (1.8, -0.4, 0.0))
+    al.step((1.8, -0.4, 0.0), 0.0)
+    _, vy, _ = al.step((1.8, -0.4, 0.0), 0.05)
+    assert vy > 0.01, vy
+
+
+def test_diff_drive_still_works():
+    _check_budget(Params(holonomic=False, standoff=0.62, tol_y=0.010, predock_tol=0.015))
 
 
 def test_lateral_offset_respected():
@@ -121,13 +148,17 @@ def test_fails_cleanly_without_tags():
 
 
 if __name__ == '__main__':
+    p = Params(holonomic=not os.environ.get('DIFF'))
+    if not p.holonomic:
+        p.standoff, p.tol_y, p.predock_tol = 0.62, 0.010, 0.015
     errs = []
     for start, i in random_starts(N):
-        al, ex, ey, eyaw, t = run(start, seed=i, verbose=True)
+        al, ex, ey, eyaw, t = run(start, seed=i, p=p, verbose=True)
         errs.append((al.state, math.hypot(ex, ey), abs(math.degrees(eyaw)), t))
-    done = [e for e in errs if e[0] == 'DONE']
-    print(f'\n{len(done)}/{len(errs)} reached DONE')
+    done = sorted((e for e in errs if e[0] == 'DONE'), key=lambda e: e[1])
+    print(f'\n{"holonomic" if p.holonomic else "diff drive"}: {len(done)}/{len(errs)} reached DONE')
     if done:
-        print(f'worst position error {max(e[1] for e in done)*100:.2f} cm, '
+        print(f'median position error {done[len(done) // 2][1]*100:.2f} cm, '
+              f'worst {done[-1][1]*100:.2f} cm, '
               f'worst yaw {max(e[2] for e in done):.2f} deg, '
               f'mean time {sum(e[3] for e in done)/len(done):.1f} s')

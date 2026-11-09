@@ -42,8 +42,10 @@ class SinkAligner(Node):
         self.stamped_mode = str(d('cmd_vel_stamped', 'auto').value).lower()
 
         p = Params()
-        for name in ('standoff', 'lateral_offset', 'predock_distance', 'expected_separation',
-                     'separation_tol', 'tol_x', 'tol_y', 'tol_yaw', 'max_lin', 'max_ang'):
+        p.holonomic = bool(d('holonomic', p.holonomic).value)
+        for name in ('standoff', 'lateral_offset', 'predock_distance', 'predock_tol',
+                     'expected_separation', 'separation_tol', 'tol_x', 'tol_y', 'tol_yaw',
+                     'max_lin', 'max_ang', 'search_ang', 'search_timeout'):
             setattr(p, name, float(d(name, getattr(p, name)).value))
         self.params = p
         self.aligner = Aligner(p)
@@ -65,7 +67,8 @@ class SinkAligner(Node):
         self.last_logged_state = None
         self.create_timer(1.0 / rate, self.tick)
         self.get_logger().info(
-            f'sink_aligner ready (standoff {p.standoff:.2f} m, autostart {self.active})')
+            f'sink_aligner ready ({"holonomic" if p.holonomic else "diff drive"}, '
+            f'standoff {p.standoff:.2f} m, autostart {self.active})')
 
     # -- services ----------------------------------------------------------------
     def on_start(self, _req, res):
@@ -76,7 +79,7 @@ class SinkAligner(Node):
 
     def on_cancel(self, _req, res):
         self.active = False
-        self.send(0.0, 0.0)
+        self.send(0.0, 0.0, 0.0)
         res.success, res.message = True, 'alignment cancelled'
         return res
 
@@ -101,16 +104,17 @@ class SinkAligner(Node):
         self.cmd_stamped = stamped
         self.cmd_pub = self.create_publisher(TwistStamped if stamped else Twist, 'cmd_vel', 10)
 
-    def send(self, v, w):
+    def send(self, vx, vy, w):
         self.ensure_cmd_pub()
         if self.cmd_stamped:
             msg = TwistStamped()
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.header.frame_id = self.base_frame
-            msg.twist.linear.x, msg.twist.angular.z = float(v), float(w)
+            tw = msg.twist
         else:
             msg = Twist()
-            msg.linear.x, msg.angular.z = float(v), float(w)
+            tw = msg
+        tw.linear.x, tw.linear.y, tw.angular.z = float(vx), float(vy), float(w)
         self.cmd_pub.publish(msg)
 
     # -- TF helpers ----------------------------------------------------------------
@@ -177,10 +181,10 @@ class SinkAligner(Node):
         a = self.aligner
         if self.active:
             t = self.get_clock().now().nanoseconds * 1e-9
-            v, w = a.step(pose, t)
-            self.send(v, w)
+            vx, vy, w = a.step(pose, t)
+            self.send(vx, vy, w)
             if a.state in (a.DONE, a.FAILED):
-                self.send(0.0, 0.0)
+                self.send(0.0, 0.0, 0.0)
                 self.active = False
         self.state_pub.publish(String(data=a.state))
         if a.last_error is not None:
@@ -207,7 +211,7 @@ def main():
         pass
     finally:
         try:
-            node.send(0.0, 0.0)
+            node.send(0.0, 0.0, 0.0)
         except Exception:  # noqa: BLE001
             pass
         node.destroy_node()

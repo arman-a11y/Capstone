@@ -3,7 +3,7 @@
 <package format="3">
   <name>sink_sim</name>
   <version>0.1.0</version>
-  <description>Husky A200 + UR5 simulation that aligns to a hospital sink cabinet using two AprilTags.</description>
+  <description>Clearpath Ridgeback + KUKA LBR iiwa 7 R800 simulation that aligns to a hospital sink cabinet using two AprilTags.</description>
   <maintainer email="dev@example.com">sink drain robot team</maintainer>
   <license>Apache-2.0</license>
 
@@ -19,6 +19,10 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>apriltag_ros</exec_depend>
   <exec_depend>clearpath_gz</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
+  <exec_depend>lbr_iiwa7_r800_description</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

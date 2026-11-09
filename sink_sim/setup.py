@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
         ('share/' + package_name + '/clearpath', glob('clearpath/*.yaml')),
+        ('share/' + package_name + '/urdf', glob('urdf/*.xacro')),
         ('share/' + package_name + '/worlds', glob('worlds/*.sdf')),
         ('share/' + package_name + '/worlds/textures', glob('worlds/textures/*.png')),
     ],
@@ -21,7 +22,7 @@ setup(
     zip_safe=True,
     maintainer='sink drain robot team',
     maintainer_email='dev@example.com',
-    description='Husky A200 + UR5 sink alignment simulation',
+    description='Ridgeback + KUKA iiwa 7 sink alignment simulation',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={

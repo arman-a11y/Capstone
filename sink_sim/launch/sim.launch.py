@@ -5,6 +5,9 @@ so this includes its two halves directly:
   * gz_sim.launch.py      gets the full path to our .sdf (minus the extension)
   * robot_spawn.launch.py gets the world NAME (must match <world name=...>)
 
+It also starts the iiwa 7's trajectory controller (config/arm_controllers.yaml),
+since Clearpath doesn't know about the KUKA arm.
+
     ros2 launch sink_sim sim.launch.py
     ros2 launch sink_sim sim.launch.py x:=0.0 y:=1.0 yaw:=0.0 rviz:=true
 """
@@ -16,6 +19,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch_ros.actions import Node
 
 WORLD_NAME = 'hospital_sink'
 
@@ -35,6 +39,7 @@ def generate_launch_description():
         DeclareLaunchArgument('y', default_value='-0.35'),
         DeclareLaunchArgument('yaw', default_value='0.25'),
         DeclareLaunchArgument('z', default_value='0.3'),
+        DeclareLaunchArgument('namespace', default_value='r100_0000'),
     ]
 
     gz = IncludeLaunchDescription(
@@ -57,4 +62,15 @@ def generate_launch_description():
             ('yaw', LaunchConfiguration('yaw')),
         ])
 
-    return LaunchDescription(args + [gz, spawn])
+    # Waits (up to 10 min, the Codespace is slow) for Clearpath's controller
+    # manager, then loads and starts the arm controller.
+    arm_controller = Node(
+        package='controller_manager', executable='spawner',
+        namespace=LaunchConfiguration('namespace'), output='screen',
+        arguments=['arm_controller',
+                   '--param-file', os.path.join(pkg, 'config', 'arm_controllers.yaml'),
+                   '--controller-manager', 'controller_manager',
+                   '--controller-manager-timeout', '600'],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}])
+
+    return LaunchDescription(args + [gz, spawn, arm_controller])
